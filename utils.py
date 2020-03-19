@@ -1,6 +1,6 @@
 import os
 import pickle
-
+import copy
 import cv2
 import numpy as np
 import streamlit as st
@@ -14,9 +14,18 @@ from tensorflow_serving.apis import (
 from consts import (
     TRAIN_FD,
     TRAIN_PKL_FP,
-    TRAIN_LABEL_FP
+    TRAIN_LABEL_FP,
+    CLASSIFIER_MODEL
 )
-
+import keras
+from keras import optimizers
+from keras.models import Sequential
+from keras.layers import Dropout, Flatten, Dense, Activation
+from keras.layers.convolutional import Convolution2D, MaxPooling2D
+from keras import callbacks
+from keras.callbacks import ReduceLROnPlateau
+from keras.layers import Conv2D, MaxPooling2D
+from keras import backend as K
 
 @st.cache
 def load_prec_embs():
@@ -44,7 +53,7 @@ def wfile(root):
 class FlowerArc:
 
     def __init__(self,
-                 host="192.168.19.96",
+                 host="192.168.19.37",
                  port=8700,
                  model_name="flower",
                  model_signature="flower_signature",
@@ -94,6 +103,7 @@ class FlowerArc:
 
         return img
 
+
     def predict(self, img):
 
         assert img.ndim == 3
@@ -107,6 +117,10 @@ class FlowerArc:
                 shape=img.shape
             )
         )
+        # if os.environ.get('https_proxy'):
+        #     del os.environ['https_proxy']
+        # if os.environ.get('http_proxy'):
+        #     del os.environ['http_proxy']
 
         result = self.stub.Predict(self.request, 10.0)
 
@@ -114,3 +128,190 @@ class FlowerArc:
             result.outputs[self.output_name]
         )
         return emb_pred
+
+    
+
+class SaliencyDetection:
+    """docstring for SaliencyDetection"""
+    def __init__(self,
+                 host="192.168.19.37",
+                 port=8700,
+                 model_name="saliency",
+                 model_signature="serving_default",
+                 input_image="input_image",
+                 pred_mask="pred_mask"):
+        self.host = host
+        self.port = port
+
+        self.channel = grpc.insecure_channel("{}:{}".format(
+            self.host, self.port
+        ))
+        self.stub = prediction_service_pb2_grpc.PredictionServiceStub(
+            self.channel
+        )
+        self.input_image = input_image
+        self.pred_mask = pred_mask
+
+        self.request = predict_pb2.PredictRequest()
+        self.request.model_spec.name = model_name
+        self.request.model_spec.signature_name = model_signature
+        
+    def saliency_predict(self, img):
+        img = cv2.resize(img, (320, 240))
+        img = np.expand_dims(img, axis = 0)
+
+        self.request.inputs[self.input_image].CopyFrom(
+            tf.contrib.util.make_tensor_proto(
+                img,
+                dtype=np.float32,
+                shape=img.shape
+            )
+        )
+
+        result = self.stub.Predict(self.request, 10.0)
+        pred_mask = tf.contrib.util.make_ndarray(result.outputs[self.pred_mask])[0]
+        return pred_mask
+
+    def bounding_box(self, img, map_img_source):
+
+        map_img = copy.deepcopy(map_img_source)
+        # import pdb; pdb.set_trace()
+        map_img = map_img.astype(np.float32)
+        thres = 0.02
+        map_img[map_img >= thres] = 1
+        map_img[map_img < thres] = 0
+
+
+        # crop bbox
+        horizontal_indicies = np.where(np.any(map_img, axis=0))[0]
+        vertical_indicies = np.where(np.any(map_img, axis=1))[0]
+
+        if horizontal_indicies.shape[0]:
+            x1, x2 = horizontal_indicies[[0, -1]]
+            y1, y2 = vertical_indicies[[0, -1]]
+            # x2 and y2 should not be part of the box. Increment by 1.
+            x2 += 1
+            y2 += 1
+        else:
+            # No mask for this instance. Might happen due to
+            # resizing or cropping. Set bbox to zeros
+            x1, x2, y1, y2 = 0, 0, 0, 0
+        img_arr_2 = copy.deepcopy(img)
+        height, width, channels = img.shape
+        h_ratio = height / 240
+        w_ratio = width / 320
+        cv2.rectangle(img_arr_2, (int(x1 * w_ratio), int(y1 * h_ratio)), (int(x2 * w_ratio), int(y2 * h_ratio)), (255,225,0), 4)
+        return img_arr_2
+
+
+class Classifier(object):
+    """docstring for ClassName"""
+    def __init__(self,
+                 host="192.168.19.37",
+                 port=8700,
+                 model_name="classifier",
+                 model_signature="classifier",
+                 input_image="input_image",
+                 y_pred="y_pred"):
+        self.host = host
+        self.port = port
+
+        self.channel = grpc.insecure_channel("{}:{}".format(
+            self.host, self.port
+        ))
+        self.stub = prediction_service_pb2_grpc.PredictionServiceStub(
+            self.channel
+        )
+        self.input_image = input_image
+        self.y_pred = y_pred
+
+        self.request = predict_pb2.PredictRequest()
+        self.request.model_spec.name = model_name
+        self.request.model_spec.signature_name = model_signature
+
+    # def build_model(self):
+    #     model = Sequential()
+
+    #     model.add(Conv2D(32, 3, 3, border_mode='same', input_shape=(224,224,3), activation='relu'))
+    #     model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    #     model.add(Conv2D(32, 3, 3, border_mode='same', activation='relu'))
+    #     model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    #     model.add(Conv2D(64, 3, 3, border_mode='same', activation='relu'))
+    #     model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    #     model.add(Conv2D(64, 2, 2, border_mode='same', activation='relu'))
+    #     model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    #     model.add(Conv2D(128, 2, 2, border_mode='same', activation='relu'))
+    #     model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    #     model.add(Flatten())
+    #     model.add(Dense(128, activation='relu'))
+    #     model.add(Dropout(0.5))
+
+    #     model.add(Dense(128, activation='relu'))
+    #     model.add(Dropout(0.5))
+
+    #     model.add(Dense(1))
+    #     model.add(Activation('sigmoid'))
+
+    #     return model
+
+    def norm_mean_std(self,
+                      img):
+
+        img = img / 255
+        img = img.astype('float32')
+
+        mean = np.mean(img, axis=(0, 1, 2))
+        std = np.std(img, axis=(0, 1, 2))
+        img = (img - mean) / std
+
+        return img
+
+    def test_preprocess(self,
+                        img,
+                        img_size=(384, 384),
+                        expand=True):
+
+        img = cv2.resize(img, img_size)
+
+        # normalize image
+        img = self.norm_mean_std(img)
+
+        if expand:
+            img = np.expand_dims(img, axis=0)
+
+        return img
+
+    def classification_predict(self, img, threshold):
+        # model = Sequential()
+        # model.add(Convolution2D(32, 3, 3, border_mode ="same", input_shape=(224, 224, 3)))
+        # model.add(Activation("relu"))
+        # model.add(MaxPooling2D(pool_size=(2, 2)))
+
+        # model.add(Flatten())
+        # model.add(Dense(256))
+        # model.add(Activation("relu"))
+        # model.add(Dropout(0.5))
+        # model.add(Dense(1, activation='sigmoid'))
+
+        # model.load_weights(CLASSIFIER_MODEL)
+        img = self.test_preprocess(img, img_size=(224, 224),expand=True)
+        self.request.inputs[self.input_image].CopyFrom(
+            tf.contrib.util.make_tensor_proto(
+                img,
+                dtype=np.float32,
+                shape=img.shape
+            )
+        )
+
+        result = self.stub.Predict(self.request, 10.0)
+        y_pred = tf.contrib.util.make_ndarray(result.outputs[self.y_pred])[0]
+        
+        # result = model.predict(img_process)
+        if y_pred[0] < threshold: result = 0
+        else: result = 1
+        return result
