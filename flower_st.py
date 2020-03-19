@@ -15,7 +15,7 @@ def main(top_k):
     classifier = Classifier()
     st.title("Flower retrieval")
     train_img_fps, train_embs, train_labels = load_prec_embs()
-    uploaded_file = st.file_uploader("Choose an image...", type="jpg")
+    uploaded_file = st.file_uploader("Choose an image...")
 
     if uploaded_file is not None:
         st.image(
@@ -26,8 +26,7 @@ def main(top_k):
         image = Image.open(uploaded_file)
         img_arr = np.array(image)
 
-        threshold = 0.5
-        # flower_classifier = flower_arc.classify(img_arr, threshold)        
+        threshold = 0.55
         flower_classifier = classifier.classification_predict(img_arr, threshold)
 
         if (flower_classifier == 0): 
@@ -37,7 +36,6 @@ def main(top_k):
             map_img = saliency.saliency_predict(img_arr)
             bounding_box_img = saliency.bounding_box(img_arr, map_img)
             st.image(bounding_box_img, use_column_width=True, caption='Flower Detection')
-            # st.text(bounding_box_img)
             # query emb
             test_emb = flower_arc.predict(img_arr)
 

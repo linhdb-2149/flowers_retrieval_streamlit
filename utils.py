@@ -17,16 +17,6 @@ from consts import (
     TRAIN_LABEL_FP,
     CLASSIFIER_MODEL
 )
-import keras
-from keras import optimizers
-from keras.models import Sequential
-from keras.layers import Dropout, Flatten, Dense, Activation
-from keras.layers.convolutional import Convolution2D, MaxPooling2D
-from keras import callbacks
-from keras.callbacks import ReduceLROnPlateau
-from keras.layers import Conv2D, MaxPooling2D
-from keras import backend as K
-
 @st.cache
 def load_prec_embs():
     with open(TRAIN_PKL_FP, "rb") as f:
@@ -117,10 +107,6 @@ class FlowerArc:
                 shape=img.shape
             )
         )
-        # if os.environ.get('https_proxy'):
-        #     del os.environ['https_proxy']
-        # if os.environ.get('http_proxy'):
-        #     del os.environ['http_proxy']
 
         result = self.stub.Predict(self.request, 10.0)
 
@@ -175,12 +161,10 @@ class SaliencyDetection:
     def bounding_box(self, img, map_img_source):
 
         map_img = copy.deepcopy(map_img_source)
-        # import pdb; pdb.set_trace()
         map_img = map_img.astype(np.float32)
         thres = 0.02
         map_img[map_img >= thres] = 1
         map_img[map_img < thres] = 0
-
 
         # crop bbox
         horizontal_indicies = np.where(np.any(map_img, axis=0))[0]
@@ -229,36 +213,6 @@ class Classifier(object):
         self.request.model_spec.name = model_name
         self.request.model_spec.signature_name = model_signature
 
-    # def build_model(self):
-    #     model = Sequential()
-
-    #     model.add(Conv2D(32, 3, 3, border_mode='same', input_shape=(224,224,3), activation='relu'))
-    #     model.add(MaxPooling2D(pool_size=(2, 2)))
-
-    #     model.add(Conv2D(32, 3, 3, border_mode='same', activation='relu'))
-    #     model.add(MaxPooling2D(pool_size=(2, 2)))
-
-    #     model.add(Conv2D(64, 3, 3, border_mode='same', activation='relu'))
-    #     model.add(MaxPooling2D(pool_size=(2, 2)))
-
-    #     model.add(Conv2D(64, 2, 2, border_mode='same', activation='relu'))
-    #     model.add(MaxPooling2D(pool_size=(2, 2)))
-
-    #     model.add(Conv2D(128, 2, 2, border_mode='same', activation='relu'))
-    #     model.add(MaxPooling2D(pool_size=(2, 2)))
-
-    #     model.add(Flatten())
-    #     model.add(Dense(128, activation='relu'))
-    #     model.add(Dropout(0.5))
-
-    #     model.add(Dense(128, activation='relu'))
-    #     model.add(Dropout(0.5))
-
-    #     model.add(Dense(1))
-    #     model.add(Activation('sigmoid'))
-
-    #     return model
-
     def norm_mean_std(self,
                       img):
 
@@ -287,18 +241,6 @@ class Classifier(object):
         return img
 
     def classification_predict(self, img, threshold):
-        # model = Sequential()
-        # model.add(Convolution2D(32, 3, 3, border_mode ="same", input_shape=(224, 224, 3)))
-        # model.add(Activation("relu"))
-        # model.add(MaxPooling2D(pool_size=(2, 2)))
-
-        # model.add(Flatten())
-        # model.add(Dense(256))
-        # model.add(Activation("relu"))
-        # model.add(Dropout(0.5))
-        # model.add(Dense(1, activation='sigmoid'))
-
-        # model.load_weights(CLASSIFIER_MODEL)
         img = self.test_preprocess(img, img_size=(224, 224),expand=True)
         self.request.inputs[self.input_image].CopyFrom(
             tf.contrib.util.make_tensor_proto(
@@ -311,7 +253,6 @@ class Classifier(object):
         result = self.stub.Predict(self.request, 10.0)
         y_pred = tf.contrib.util.make_ndarray(result.outputs[self.y_pred])[0]
         
-        # result = model.predict(img_process)
         if y_pred[0] < threshold: result = 0
         else: result = 1
         return result
