@@ -4,6 +4,7 @@ import numpy as np
 from scipy.spatial.distance import cdist
 from PIL import Image
 import streamlit as st
+import consts
 
 from utils import FlowerArc, load_prec_embs, SaliencyDetection, Classifier
 
@@ -26,8 +27,7 @@ def main(top_k):
         image = Image.open(uploaded_file)
         img_arr = np.array(image)
 
-        threshold = 0.55
-        flower_classifier = classifier.classification_predict(img_arr, threshold)
+        flower_classifier = classifier.classification_predict(img_arr, consts.CLASSIFICATION_THRESHHOLD)
 
         if (flower_classifier == 0): 
             st.subheader('Flower Detected')
