@@ -1,2 +1,3 @@
 # Streamlit Demo
-Streamlit demo frontend for PoC
+
+Streamlit demo frontend for PoC Flower Retrieval
